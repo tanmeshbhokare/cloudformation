@@ -8,4 +8,4 @@ Task 1 : Create an AWS CloudFormation to create a bucket and lambda function.
   so whenever file is uploaded to s3 bucket, it will trigger lambda function.
   that lambda function reads the contents of file, prints it and later delete from bucket.
   
-  you can change the python function according to your requiremennt. 
+  you can change the python function according to your requirement. 
