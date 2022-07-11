@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  BucketName:
+    Description: A name for S3 Bucket
+    Type: String
+    Default: tanmeshbucket
+Resources:
+  LambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: Lambda-S3-Role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: allowLogging
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:*'
+                Resource: '*'
+        - PolicyName: getAndDeleteObjects
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:DeleteObject'
+                  - 's3:List*'
+                Resource: '*'
+  LambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: LambdaFunction
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: python3.7
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import urllib
+          from botocore.vendored import requests
+          def handler(event, context):
+              s3_client = boto3.client('s3')
+              bucket_name = event['Records'][0]['s3']['bucket']['name']
+              key = event['Records'][0]['s3']['object']['key']
+              key = urllib.parse.unquote_plus(key, encoding='utf-8')
+              message = key + ' is the key of file uploaded and bucket name is: ' + bucket_name
+              print(message)
+              response = s3_client.get_object(Bucket=bucket_name, Key=key)
+              contents = response["Body"].read().decode()
+              contents = json.loads(contents)
+              print("Contents of uploaded file are : \n", contents)
+              
+  ProcessingLambdaPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref LambdaFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub 'arn:aws:s3:::${BucketName}'
+      SourceAccount: !Ref 'AWS::AccountId'
+  Bucket:
+    Type: 'AWS::S3::Bucket'
+    DependsOn: ProcessingLambdaPermission
+    Properties:
+      BucketName: !Ref BucketName
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: 's3:ObjectCreated:Put'
+            Function: !GetAtt LambdaFunction.Arn
+  CustomResource:
+    Type: 'Custom::CustomResource'
+    Properties:
+      ServiceToken: !GetAtt CustomResourceLambdaFunction.Arn
+      s3bucketName: !Ref BucketName
+    DependsOn: Bucket
+  CustomResourceLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: CustomLambdaFunction
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: python3.7
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          import cfnresponse
+          import boto3
+          def handler(event, context):
+              print(event)
+              responseData = {}
+              ResponseStatus = cfnresponse.SUCCESS
+              s3bucketName = event['ResourceProperties']['s3bucketName']
+              if event['RequestType'] == 'Create':
+                  responseData['Message'] = "Resource creation successful!"
+              elif event['RequestType'] == 'Update':
+                  responseData['Message'] = "Resource update successful!"
+              elif event['RequestType'] == 'Delete':
+                  # Need to empty the S3 bucket before it is deleted
+                  s3 = boto3.resource('s3')
+                  bucket = s3.Bucket(s3bucketName)
+                  bucket.objects.all().delete()
+                  responseData['Message'] = "Resource deletion successful!"
+              cfnresponse.send(event, context, ResponseStatus, responseData)
