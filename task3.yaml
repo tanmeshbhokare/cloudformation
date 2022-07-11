@@ -48,6 +48,7 @@ Resources:
       FunctionName: LambdaFunction
       Role: !GetAtt LambdaRole.Arn
       Runtime: python3.7
+      Timeout: 15
       Handler: index.handler
       Code:
         ZipFile: |
@@ -86,6 +87,7 @@ Resources:
       FunctionName: CustomLambdaFunction
       Role: !GetAtt LambdaRole.Arn
       Runtime: python3.7
+      Timeout: 15
       Handler: index.handler
       Code:
         ZipFile: |
