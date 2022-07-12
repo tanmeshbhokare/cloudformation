@@ -24,5 +24,8 @@ Task 2 : Create an AWS CloudFormation to create a bucket and trigger lambda func
 Task 3 : Lambda function to create EC2 instance
   
   Create S3 Bucket and integrate lambda function to it, whenever file is uploaded to S3Bucket Lambda function will create an EC2 instance.
-  Send S3Bucket name and EC2 InstanceID to Outputs
+  Send S3Bucket to Outputs
   While Deleting CF Stack, it should delete EC2 Instance + S3Bucket (also delete objects from bucket) and all resources should be deleted.
+
+Task 4 : display EC2 Instance id in outputs after lambda function is triggered 
+  Lambda Function should create an EC2 instance and display instance-id in outputs tab
