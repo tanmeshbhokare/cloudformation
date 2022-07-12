@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  BucketName:
+    Description: A name for S3 Bucket
+    Type: String
+    Default: tanmeshbucket
+  EC2Instance:
+    Description: Return Value from Lambda Function
+    Type: String
+    Default: notUpdated
+Outputs:
+  S3BucketName:
+    Description: A name for S3 Bucket
+    Value: !Ref BucketName
+  EC2Instance:
+    Description: Return Value of Lambda Function
+    Value: !Ref EC2Instance
+Resources:
+  LambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: Lambda-S3-Role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: allowLogging
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:*'
+                Resource: '*'
+        - PolicyName: getAndDeleteObjects
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:DeleteObject'
+                  - 's3:List*'
+                Resource: '*'
+        - PolicyName: Ec2permissions
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 'ec2:*'
+                Resource: '*'
+        - PolicyName: CloudFormationFullAccess
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 'cloudformation:*'
+                Resource: '*'
+  LambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: LambdaFunction
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: python3.7
+      Timeout: 15
+      Handler: index.handler
+      Code:
+        ZipFile: |
+            import boto3
+            def handler(event, context):
+                ec2 = boto3.resource('ec2')
+                instances = ec2.create_instances(ImageId="ami-0cff7528ff583bf9a",MinCount=1,MaxCount=1,InstanceType="t2.micro",KeyName="aws-pair")
+                instance = str(instances)
+                instance = instance[instance.find("id")+4:-3]
+                print("EC2 Instance is successfully created with id = " +instance)
+
+                client = boto3.client('cloudformation')
+                response = client.update_stack(
+                   StackName='e6data-task4',
+                   UsePreviousTemplate=True,
+                   Parameters=[{
+                        'ParameterKey': 'EC2Instance',
+                        'ParameterValue': instance,
+                        'UsePreviousValue': False
+                    },],
+                    Capabilities=['CAPABILITY_NAMED_IAM',]
+                    )
+  ProcessingLambdaPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref LambdaFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub 'arn:aws:s3:::${BucketName}'
+      SourceAccount: !Ref 'AWS::AccountId'                
+  Bucket:
+    Type: 'AWS::S3::Bucket'
+    DependsOn: ProcessingLambdaPermission
+    Properties:
+      BucketName: !Ref BucketName
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: 's3:ObjectCreated:Put'
+            Function: !GetAtt LambdaFunction.Arn
+  CustomResource:
+    Type: 'Custom::CustomResource'
+    Properties:
+      ServiceToken: !GetAtt CustomResourceLambdaFunction.Arn
+      s3bucketName: !Ref BucketName
+    DependsOn: Bucket
+  CustomResourceLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: CustomLambdaFunction
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: python3.7
+      Timeout: 15
+      Handler: index.handler
+      Code:
+        ZipFile: |
+          import cfnresponse
+          import boto3
+          def handler(event, context):
+              print(event)
+              responseData = {}
+              ResponseStatus = cfnresponse.SUCCESS
+              s3bucketName = event['ResourceProperties']['s3bucketName']
+              if event['RequestType'] == 'Create':
+                  responseData['Message'] = "Resource creation successful!"
+              elif event['RequestType'] == 'Update':
+                  responseData['Message'] = "Resource update successful!"
+              elif event['RequestType'] == 'Delete':
+                  # Need to empty the S3 bucket before it is deleted
+                  s3 = boto3.resource('s3')
+                  bucket = s3.Bucket(s3bucketName)
+                  bucket.objects.all().delete()
+                  
+                  #Terminate EC2 Instance
+                  ec2=boto3.client('ec2')
+                  resp=ec2.describe_instances()
+                  newlist=[]
+                  for reservation in resp['Reservations']:
+                    for instance in reservation['Instances']:
+                      newlist.append(instance['InstanceId'])
+                  print(newlist)
+                  print(ec2.terminate_instances(InstanceIds=(newlist)))
+                  
+                  responseData['Message'] = "Resource deletion successful!"
+              cfnresponse.send(event, context, ResponseStatus, responseData)
