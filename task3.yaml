@@ -4,6 +4,10 @@ Parameters:
     Description: A name for S3 Bucket
     Type: String
     Default: tanmeshbucket
+Outputs:
+  S3BucketName:
+    Description: A name for S3 Bucket
+    Value: !Ref BucketName
 Resources:
   LambdaRole:
     Type: 'AWS::IAM::Role'
