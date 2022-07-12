@@ -29,4 +29,8 @@ Task 3 : Lambda function to create EC2 instance
 
 Task 4 : display EC2 Instance id in outputs after lambda function is triggered 
 
+  Uploading any object to S3 Bucket should trigger Lambda function.
   Lambda Function should create an EC2 instance and display instance-id in outputs tab
+  Delete Stack should delete all resources, if S3Bucket is not empty, objects should be deleted first.
+  Running EC2 Instances should be Terminated.
+  
